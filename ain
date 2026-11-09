@@ -1,0 +1,140 @@
+"""Game abstraction + Connect Four reference implementation.
+
+The benchmark engine only relies on the `Game` protocol, so any two-player,
+turn-based, perfect-information game (Othello, Checkers, ...) can be plugged in
+by implementing the same handful of methods.
+
+Agents search with make/undo on a *clone*, so the real game is never corrupted.
+"""
+from __future__ import annotations
+
+from typing import List, Protocol, runtime_checkable
+
+ROWS, COLS = 6, 7
+CENTER_ORDER = (3, 2, 4, 1, 5, 0, 6)  # centre-first ordering helps alpha-beta
+
+
+@runtime_checkable
+class Game(Protocol):
+    name: str
+    winner: int  # 0 = none, 1 / 2 = player number
+
+    @property
+    def player(self) -> int: ...          # side to move (1 or 2)
+    def legal_moves(self) -> List[int]: ...
+    def play(self, move: int) -> None: ...
+    def undo(self) -> None: ...
+    def is_terminal(self) -> bool: ...
+    def evaluate(self, player: int) -> int: ...   # heuristic, higher = better for `player`
+    def clone(self) -> "Game": ...
+
+
+def _build_windows():
+    windows = []
+    for r in range(ROWS):
+        for c in range(COLS):
+            for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
+                er, ec = r + 3 * dr, c + 3 * dc
+                if 0 <= er < ROWS and 0 <= ec < COLS:
+                    windows.append(tuple((r + i * dr, c + i * dc) for i in range(4)))
+    return tuple(windows)
+
+
+WINDOWS = _build_windows()  # 69 four-in-a-row lines
+
+
+class Connect4:
+    name = "connect4"
+
+    def __init__(self) -> None:
+        self.grid = [[0] * COLS for _ in range(ROWS)]  # row 0 = bottom
+        self.heights = [0] * COLS
+        self.history: List[int] = []
+        self.winner = 0
+
+    # ---- state ---------------------------------------------------------
+    @property
+    def player(self) -> int:
+        return 1 if len(self.history) % 2 == 0 else 2
+
+    def legal_moves(self) -> List[int]:
+        return [c for c in CENTER_ORDER if self.heights[c] < ROWS]
+
+    def is_terminal(self) -> bool:
+        return self.winner != 0 or len(self.history) == ROWS * COLS
+
+    # ---- transitions -----------------------------------------------------
+    def play(self, col: int) -> None:
+        if self.winner or not (0 <= col < COLS) or self.heights[col] >= ROWS:
+            raise ValueError(f"illegal move: {col}")
+        p, r = self.player, self.heights[col]
+        self.grid[r][col] = p
+        self.heights[col] += 1
+        self.history.append(col)
+        if self._wins_at(r, col, p):
+            self.winner = p
+
+    def undo(self) -> None:
+        col = self.history.pop()
+        self.heights[col] -= 1
+        self.grid[self.heights[col]][col] = 0
+        self.winner = 0  # a position with a winner can never have a predecessor with one
+
+    def _wins_at(self, r: int, c: int, p: int) -> bool:
+        g = self.grid
+        for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
+            n = 1
+            for s in (1, -1):
+                rr, cc = r + s * dr, c + s * dc
+                while 0 <= rr < ROWS and 0 <= cc < COLS and g[rr][cc] == p:
+                    n += 1
+                    rr += s * dr
+                    cc += s * dc
+            if n >= 4:
+                return True
+        return False
+
+    # ---- heuristic -------------------------------------------------------
+    def evaluate(self, player: int) -> int:
+        opp = 3 - player
+        g = self.grid
+        score = 0
+        for r in range(ROWS):  # centre-column control
+            v = g[r][3]
+            if v == player:
+                score += 3
+            elif v == opp:
+                score -= 3
+        for w in WINDOWS:
+            p = o = 0
+            for r, c in w:
+                v = g[r][c]
+                if v == player:
+                    p += 1
+                elif v == opp:
+                    o += 1
+            if p and o:
+                continue
+            if p == 3:
+                score += 5
+            elif p == 2:
+                score += 2
+            elif o == 3:
+                score -= 5
+            elif o == 2:
+                score -= 2
+        return score
+
+    # ---- utils -----------------------------------------------------------
+    def clone(self) -> "Connect4":
+        g = Connect4.__new__(Connect4)
+        g.grid = [row[:] for row in self.grid]
+        g.heights = self.heights[:]
+        g.history = self.history[:]
+        g.winner = self.winner
+        return g
+
+    def render(self) -> str:
+        sym = {0: ".", 1: "X", 2: "O"}
+        rows = ["".join(sym[v] for v in row) for row in reversed(self.grid)]
+        return "\n".join(rows) + "\n" + "0123456"

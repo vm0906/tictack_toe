@@ -1,0 +1,4 @@
+projects = {"Alpha": "Alice", "Beta": "Bob", "Gamma": "Charlie"}
+
+p = input("Enter project: ")
+print(projects.get(p, "Not found"))
