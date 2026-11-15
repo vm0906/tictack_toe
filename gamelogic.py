@@ -424,10 +424,9 @@ class TicTacToeGame:
     def play_ai_turn(self, difficulty: Difficulty = Difficulty.INTERMEDIATE
                      ) -> Optional[Move]:
         """Choose and play an AI move for the current player; returns it."""
-        move = self.get_ai_move(difficulty)
-        if move is not None:
-            self.make_move(*move)
-        return move
+        from agents import TicTacToeAgent
+
+        return TicTacToeAgent(difficulty).play_turn(self)
 
     # -- hint -------------------------------------------------------------- #
     def get_hint(self) -> Optional[Move]:
